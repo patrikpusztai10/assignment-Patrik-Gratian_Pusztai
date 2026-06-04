@@ -1,5 +1,4 @@
-namespace TheAdventure;
-
+namespace patrikpusztai_snakegame;
 public enum KeyCode : UInt16
 {
     Unknown = 0,

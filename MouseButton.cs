@@ -1,5 +1,4 @@
-namespace TheAdventure;
-
+namespace patrikpusztai_snakegame;
 public enum MouseButton : byte
 {
     Primary = 1,

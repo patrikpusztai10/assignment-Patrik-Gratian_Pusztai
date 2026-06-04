@@ -1,9 +1,9 @@
+namespace patrikpusztai_snakegame;
+
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Silk.NET.Core.Contexts;
-
-namespace TheAdventure;
 
 public class SdlContext : INativeContext
 {
