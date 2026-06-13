@@ -1,14 +1,14 @@
 namespace patrikpusztai_snakegame;
-
 using Silk.NET.SDL;
+using Silk.NET.Maths;
 using System.Diagnostics;
+using System.Media;
 
 
-public sealed class SnakeGame : ISdlGame
+public sealed class SnakeGame : ISdlGame,IDisposable, IAudioManager
 {
     private const int windowWidth=600;
     private const int windowHeight=600;
-
     private const int cellSize=20;
 
     private const int gridW = windowWidth / cellSize;
@@ -24,14 +24,18 @@ public sealed class SnakeGame : ISdlGame
 
     private Direction direction;
     private Direction nextMove;
-    private GridPosition apple;
+    private readonly List<FoodItem> _food = new();
+    private const int MaxFoodItems = 2; 
+    private const double PearSpawnChance = 0.25;  
+    private const double BananaSpawnChance = 0.15;  
 
     private bool running = true;
     private bool game_over;
     private int score;
-
+    
     private ulong frames;
 
+  
     public SnakeGame()
     {
         _sdl = new Sdl(new SdlContext());
@@ -57,7 +61,6 @@ public sealed class SnakeGame : ISdlGame
             }
 
             _renderer = (IntPtr)_sdl.CreateRenderer((Window*)_window, -1,(uint)RendererFlags.Accelerated);
-
             if (_renderer == IntPtr.Zero)
             {
                 throw new SnakeGameException("Renderer creation failed.");
@@ -68,7 +71,39 @@ public sealed class SnakeGame : ISdlGame
 
         ResetGame();
     }
-
+    
+    public void PlayApple()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            SoundPlayer player=new SoundPlayer("assets/apple.wav");
+            player.Play();
+        }
+    }
+    public void PlayPear()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            SoundPlayer player=new SoundPlayer("assets/pear.wav");
+            player.Play();
+        }
+    }
+    public void PlayBanana()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            SoundPlayer player=new SoundPlayer("assets/banana.wav");
+            player.Play();
+        }
+    }
+    public void PlayGameOver()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            SoundPlayer player=new SoundPlayer("assets/gameover.wav");
+            player.Play();
+        }
+    }
     public void Run()
     {
         var eventData= new Event();
@@ -163,7 +198,9 @@ public sealed class SnakeGame : ISdlGame
         score=0;
         game_over = false;
 
+        _food.Clear();
         SpawnFood();
+        
     }
 
     private void Update()
@@ -184,20 +221,45 @@ public sealed class SnakeGame : ISdlGame
         if (head.X < 0 ||head.X >= gridW ||head.Y < 0 || head.Y >= gridH)
         {
             game_over = true;
+            PlayGameOver();
             return;
         }
 
         if (_snake.Skip(1).Any(s => s == head))
         {
             game_over= true;
+            PlayGameOver();
             return;
         }
 
         _snake.Insert(0, head);
 
-        if (head == apple)
+        var eaten= _food.FirstOrDefault(f => f.Position == head);
+        if (eaten != default)
         {
-            score++;
+            _food.Remove(eaten);
+            int extraGrowth = 1;
+            if (eaten.Type == FoodType.Apple)
+            {
+                PlayApple();
+                score += 10;
+            }
+            else if(eaten.Type == FoodType.Pear)
+            {
+                PlayPear();
+                score += 20;
+                extraGrowth = 2;
+
+            }
+            else if (eaten.Type == FoodType.Banana)
+            {
+                PlayBanana();
+                score += 30;  
+                extraGrowth = 3;  
+            }
+          
+            for (int i = 0; i < extraGrowth; i++)
+                    _snake.Add(_snake[^1]);
             SpawnFood();
         }
         else
@@ -208,59 +270,113 @@ public sealed class SnakeGame : ISdlGame
 
     private void SpawnFood()
     {
-        //Utilizand LINQ gasim o pozitie pe grid care nu e ocupata de sarpe, si punem acolo marul
-        IEnumerable<GridPosition> freeCells =
-            Enumerable.Range(0, gridW)
-                .SelectMany( x => Enumerable.Range(0, gridH), (x, y) => new GridPosition(x, y))
-                .Except(_snake);
+        var occupied = _snake.Concat(_food.Select(f => f.Position));
+        var freeCells = Enumerable.Range(0, gridW)
+            .SelectMany(x => Enumerable.Range(0, gridH), (x, y) => new GridPosition(x, y))
+            .Except(occupied)
+            .ToList();
 
-        var cells=freeCells.ToList();
-        if (cells.Count == 0)
-        {
+        if (freeCells.Count == 0)
             throw new SnakeGameException("No valid food position.");
+
+        var position = freeCells[_random.Next(freeCells.Count)];
+        bool pearAlreadyPresent = _food.Any(f => f.Type == FoodType.Pear);
+
+        FoodType type;
+
+        if (!pearAlreadyPresent && _random.NextDouble() < PearSpawnChance)
+        {
+            type = FoodType.Pear;
+        }
+        else if (_random.NextDouble() < BananaSpawnChance)
+        {
+            type = FoodType.Banana;
+        }
+        else
+        {
+            type = FoodType.Apple;
         }
 
-        apple = cells[_random.Next(cells.Count)];
+        _food.Add(new FoodItem(position, type));
     }
-    // AI-generated
-    private unsafe void DrawApple(Renderer* renderer)
+    //AI Generated
+    private unsafe void DrawFood(Renderer* renderer)
     {
-        _sdl.SetRenderDrawColor(renderer, 255, 50, 50, 255);
-        int x= apple.X * cellSize;
-        int y= apple.Y * cellSize;
-        for (int row = 0; row < cellSize; row++)
+        foreach (var item in _food)
         {
-            _sdl.RenderDrawLine(
-                renderer,
-                x,
-                y + row,
-                x + cellSize - 1,
-                y + row);
-        }
-    }
+            int x = item.Position.X * cellSize;
+            int y = item.Position.Y * cellSize;
+            int pad = 2;
 
-    private unsafe void DrawSnake(Renderer* renderer)
-    {
-        _sdl.SetRenderDrawColor(renderer, 0, 220, 220, 255);
-
-        foreach (var segment in _snake)
-        {
-            int x=segment.X * cellSize;
-            int y=segment.Y * cellSize;
-
-            for (int row = 0; row < cellSize; row++)
+            //Culori pentru fiecare fruct
+            (byte r, byte g, byte b) = item.Type switch
             {
-                _sdl.RenderDrawLine(
-                    renderer,
-                    x,
-                    y + row,
-                    x + cellSize - 1,
-                    y + row);
+                FoodType.Apple => ((byte)220, (byte)40, (byte)40),
+                FoodType.Pear => ((byte)90, (byte)200, (byte)60),
+                FoodType.Banana => ((byte)240, (byte)220, (byte)40),
+                _ => ((byte)255, (byte)255, (byte)255)
+            };
+
+            var rect = new Rectangle<int>(x + pad, y + pad, cellSize - pad * 2, cellSize - pad * 2);
+
+            // Shadow
+            _sdl.SetRenderDrawColor(renderer, 0, 0, 0, 60);
+            var shadow = new Rectangle<int>(x + pad + 1, y + pad + 2, cellSize - pad * 2, cellSize - pad * 2);
+            _sdl.RenderFillRect(renderer, &shadow);
+
+            // Main body
+            _sdl.SetRenderDrawColor(renderer, r, g, b, 255);
+            _sdl.RenderFillRect(renderer, &rect);
+
+            // Outline
+            _sdl.SetRenderDrawColor(renderer, (byte)(r / 2), (byte)(g / 2), (byte)(b / 2), 255);
+            _sdl.RenderDrawRect(renderer, &rect);
+
+            // Highlight dot (top-left)
+            _sdl.SetRenderDrawColor(renderer, 255, 255, 255, 180);
+            var highlight = new Rectangle<int>(x + pad + 2, y + pad + 2, 3, 3);
+            _sdl.RenderFillRect(renderer, &highlight);
+
+            // Small stem for apple/pear
+            if (item.Type != FoodType.Banana)
+            {
+                _sdl.SetRenderDrawColor(renderer, 120, 80, 40, 255);
+                var stem = new Rectangle<int>(x + cellSize / 2 - 1, y, 2, pad + 1);
+                _sdl.RenderFillRect(renderer, &stem);
             }
         }
     }
-    // end AI-generated
+    //End AI Generated
+    private unsafe void DrawSnake(Renderer* renderer)
+    {
+        int pad = 1;
 
+        for (int i = 0; i < _snake.Count; i++)
+        {
+            var segment = _snake[i];
+            int x = segment.X * cellSize;
+            int y = segment.Y * cellSize;
+
+            bool isHead = i == 0;
+
+            var rect = new Rectangle<int>(x + pad, y + pad, cellSize - pad * 2, cellSize - pad * 2);
+
+            if (isHead)
+            {
+                //Capul sarpelui va fi mai deschis la culoare
+                _sdl.SetRenderDrawColor(renderer, 60, 255, 255, 255);
+            }
+        
+            _sdl.RenderFillRect(renderer, &rect);
+
+            //Contur
+            _sdl.SetRenderDrawColor(renderer, 0, 100, 100, 255);
+            _sdl.RenderDrawRect(renderer, &rect);
+
+            
+        }
+    }
+   
     private unsafe void Render()
     {
         var renderer = (Renderer*)_renderer;
@@ -268,13 +384,16 @@ public sealed class SnakeGame : ISdlGame
         _sdl.SetRenderDrawColor(renderer, 40, 40, 40, 255);
         _sdl.RenderClear(renderer);
 
-        DrawApple(renderer);
+        DrawFood(renderer);
         DrawSnake(renderer);
+         string title = game_over
+        ? $"Snake Game - GAME OVER | Score: {score} | Press SPACE to restart"
+        : $"Snake Game - Patrik Pusztai | Score: {score}";
+    _sdl.SetWindowTitle((Window*)_window, title);
 
         _sdl.RenderPresent(renderer);
 
     }
-
 
     
     public void Dispose()
@@ -295,10 +414,4 @@ public sealed class SnakeGame : ISdlGame
         _sdl.Quit();
     }
 
-    /**
-    Possible future improvements:
-    1. Adaugam si pere pe langa pere, care vor avea un efect special
-    2. Punctele vor fi vizibile pe screen pentru user
-    3. Adaugam efecte sonore si facem jocul mai atractiv vizual
-    **/
 }

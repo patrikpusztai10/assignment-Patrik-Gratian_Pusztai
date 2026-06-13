@@ -1,0 +1,16 @@
+{
+  "rowCount": 1,
+  "columnCount": 1,
+  "frameWidth": 20,
+  "frameHeight": 20,
+  "frameCenter": { "offsetX": 10, "offsetY": 10 },
+  "fileName": "snake_body.bmp",
+  "animations": {
+    "Idle": {
+      "startFrame": { "row": 0, "col": 0 },
+      "endFrame": { "row": 0, "col": 0 },
+      "durationMs": 1000,
+      "loop": true
+    }
+  }
+}
